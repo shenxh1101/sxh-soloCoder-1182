@@ -13,9 +13,12 @@ interface Pulley3DProps {
   isFocused: boolean;
   isBeltEditTarget: boolean;
   isPendingBelt: boolean;
+  isMountedOnShaft?: boolean;
+  isShaftEditTarget?: boolean;
+  isPendingShaft?: boolean;
 }
 
-export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBeltEditTarget, isPendingBelt }: Pulley3DProps) {
+export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBeltEditTarget, isPendingBelt, isMountedOnShaft, isShaftEditTarget, isPendingShaft }: Pulley3DProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const isRunning = useSceneStore((s) => s.isRunning);
   const selectComponent = useSceneStore((s) => s.selectComponent);
@@ -30,7 +33,15 @@ export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBe
   let emissive = '#000000';
   let emissiveIntensity = 0;
 
-  if (isFocused) {
+  if (isPendingShaft) {
+    color = '#06b6d4';
+    emissive = '#0891b2';
+    emissiveIntensity = 0.6;
+  } else if (isShaftEditTarget && connectionEditMode === 'shaft') {
+    color = '#22d3ee';
+    emissive = '#06b6d4';
+    emissiveIntensity = 0.5;
+  } else if (isFocused) {
     color = '#fbbf24';
     emissive = '#d97706';
     emissiveIntensity = 0.4;
@@ -60,8 +71,14 @@ export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBe
     }
   });
 
+  const handleShaftClick = useSceneStore((s) => s.handleShaftEditClick);
+
   const handleClick = (e: any) => {
     e.stopPropagation();
+    if (connectionEditMode === 'shaft') {
+      handleShaftClick(component.id);
+      return;
+    }
     selectComponent(component.id);
     if (connectionEditMode !== 'belt') {
       const result = getTransmissionChain(component.id, gearConnections, beltConnections);
@@ -71,7 +88,13 @@ export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBe
 
   const handlePointerOver = (e: any) => {
     e.stopPropagation();
-    document.body.style.cursor = connectionEditMode === 'belt' ? 'copy' : 'pointer';
+    if (connectionEditMode === 'shaft') {
+      document.body.style.cursor = isPendingShaft || isShaftEditTarget ? 'copy' : 'pointer';
+    } else if (connectionEditMode === 'belt') {
+      document.body.style.cursor = 'copy';
+    } else {
+      document.body.style.cursor = 'pointer';
+    }
   };
 
   const handlePointerOut = () => {
@@ -99,16 +122,39 @@ export function Pulley3D({ component, isSelected, isHighlighted, isFocused, isBe
         />
       </mesh>
 
-      {(isSelected || isHighlighted || isFocused || isPendingBelt || (isBeltEditTarget && connectionEditMode === 'belt')) && (
+      {(isSelected || isHighlighted || isFocused || isPendingBelt || isPendingShaft || (isBeltEditTarget && connectionEditMode === 'belt') || (isShaftEditTarget && connectionEditMode === 'shaft')) && (
         <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[component.radius + 0.1, component.radius + 0.18, 64]} />
           <meshBasicMaterial
-            color={isPendingBelt ? '#a855f7' : isBeltEditTarget && connectionEditMode === 'belt' ? '#22c55e' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
+            color={isPendingShaft ? '#06b6d4' : isShaftEditTarget && connectionEditMode === 'shaft' ? '#22d3ee' : isPendingBelt ? '#a855f7' : isBeltEditTarget && connectionEditMode === 'belt' ? '#22c55e' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
             transparent
             opacity={0.9}
             side={THREE.DoubleSide}
           />
         </mesh>
+      )}
+
+      {isMountedOnShaft && (
+        <>
+          <mesh position={[0, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[component.radius + 0.22, component.radius + 0.3, 48]} />
+            <meshBasicMaterial
+              color="#06b6d4"
+              transparent
+              opacity={0.4}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[component.radius + 0.24, component.radius + 0.26, 48]} />
+            <meshBasicMaterial
+              color="#22d3ee"
+              transparent
+              opacity={0.9}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
       )}
 
       {connectionEditMode === 'belt' && (

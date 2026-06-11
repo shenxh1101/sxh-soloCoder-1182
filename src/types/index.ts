@@ -21,6 +21,7 @@ export interface BaseComponent {
   scale: Vector3;
   name: string;
   orderIndex: number;
+  mountedOnShaftId?: string | null;
 }
 
 export interface GearComponent extends BaseComponent {
@@ -66,9 +67,34 @@ export interface BeltConnection {
   id: string;
   fromPulleyId: string;
   toPulleyId: string;
+  manual?: boolean;
+}
+
+export interface ShaftAssembly {
+  shaftId: string;
+  mountedComponentIds: string[];
+}
+
+export interface MeasurementPair {
+  id: string;
+  componentAId: string;
+  componentBId: string;
+  type: 'center-distance' | 'gear-mesh' | 'belt-length';
+  currentValue: number;
+  targetValue?: number;
+  deviation?: number;
+}
+
+export interface SnappingSuggestion {
+  targetComponentId: string;
+  snapType: 'gear-mesh' | 'coaxial' | 'belt-distance';
+  targetPosition: Vector3;
+  distance: number;
 }
 
 export type BackgroundType = 'dark' | 'blueprint' | 'transparent';
+
+export type ConnectionEditMode = null | 'belt' | 'shaft';
 
 export interface ComponentPreset {
   type: ComponentType;
@@ -100,3 +126,8 @@ export const SHAFT_PRESETS: ComponentPreset[] = [
 export const MOTOR_PRESETS: ComponentPreset[] = [
   { type: ComponentType.MOTOR, name: 'motor_standard', label: '标准电机', icon: 'zap', defaultProps: { speed: 60, direction: 1, running: true } as Partial<MotorComponent> },
 ];
+
+export const COAXIAL_SNAP_TOLERANCE = 0.35;
+export const GEAR_SNAP_DISTANCE = 1.2;
+export const BELT_AUTO_MIN_RATIO = 0.8;
+export const BELT_AUTO_MAX_RATIO = 3.0;

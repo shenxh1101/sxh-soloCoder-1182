@@ -1,9 +1,43 @@
 import { useState } from 'react';
-import { Info, RotateCw, Move, Trash2, Zap, Link, GitBranch, Target, ChevronDown, ChevronRight, ArrowRight, RotateCcw } from 'lucide-react';
+import {
+  Info,
+  RotateCw,
+  Trash2,
+  Zap,
+  Link,
+  GitBranch,
+  Target,
+  ChevronDown,
+  ChevronRight,
+  ArrowRight,
+  RotateCcw,
+  Ruler,
+  Magnet,
+  AlertTriangle,
+  Activity,
+  Disc,
+  Link2Off,
+  BarChart2,
+  CircleDot,
+  Unlink,
+} from 'lucide-react';
 import { useSceneStore } from '../../store/useSceneStore';
-import { ComponentType } from '../../types';
-import type { SceneComponent, GearComponent, MotorComponent, PulleyComponent, ShaftComponent } from '../../types';
-import { getAllTransmissionChains, getTransmissionChain, type TransmissionChainInfo, type TransmissionStage } from '../../engine/TransmissionEngine';
+import { ComponentType, COAXIAL_SNAP_TOLERANCE } from '../../types';
+import type {
+  SceneComponent,
+  GearComponent,
+  MotorComponent,
+  PulleyComponent,
+  ShaftComponent,
+  MeasurementPair,
+} from '../../types';
+import {
+  getAllTransmissionChains,
+  getTransmissionChain,
+  type TransmissionChainInfo,
+  type TransmissionStage,
+} from '../../engine/TransmissionEngine';
+import { getComponentRadius } from '../../utils/geometry';
 
 function getComponentTypeName(type: ComponentType) {
   switch (type) {
@@ -18,7 +52,11 @@ function getComponentTypeName(type: ComponentType) {
   }
 }
 
-function renderComponentDetails(comp: SceneComponent, isRunning: boolean, updateComponentProperty: any) {
+function renderComponentDetails(
+  comp: SceneComponent,
+  isRunning: boolean,
+  updateComponentProperty: any
+) {
   const details: { label: string; value: React.ReactNode }[] = [];
 
   if (comp.type === ComponentType.GEAR) {
@@ -106,6 +144,19 @@ function renderComponentDetails(comp: SceneComponent, isRunning: boolean, update
   return details;
 }
 
+function StatusBadge({ label, ok }: { label: string; ok: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
+        ok ? 'bg-green-500/20 text-green-400' : 'bg-slate-600/50 text-slate-400'
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-400' : 'bg-slate-500'}`} />
+      {label}
+    </span>
+  );
+}
+
 function PropertiesTab() {
   const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
   const components = useSceneStore((s) => s.components);
@@ -115,6 +166,8 @@ function PropertiesTab() {
   const updateComponentProperty = useSceneStore((s) => s.updateComponentProperty);
   const selectComponent = useSceneStore((s) => s.selectComponent);
   const isRunning = useSceneStore((s) => s.isRunning);
+  const getShaftAssemblies = useSceneStore((s) => s.getShaftAssemblies);
+  const unmountComponentFromShaft = useSceneStore((s) => s.unmountComponentFromShaft);
 
   const selectedComponent = components.find((c) => c.id === selectedComponentId);
 
@@ -129,10 +182,23 @@ function PropertiesTab() {
     return [...gearConns, ...beltConns];
   };
 
+  const getShaftInfo = () => {
+    if (!selectedComponent) return null;
+    const assemblies = getShaftAssemblies();
+    for (const [shaftId, memberIds] of assemblies) {
+      if (memberIds.includes(selectedComponent.id) && selectedComponent.id !== shaftId) {
+        const shaft = components.find((c) => c.id === shaftId);
+        const members = memberIds.filter((id) => id !== selectedComponent.id && id !== shaftId);
+        return { shaft, memberCount: members.length, shaftId };
+      }
+    }
+    return null;
+  };
+
   if (!selectedComponent) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8 text-center">
-        <Move className="w-12 h-12 mb-3 opacity-50" />
+        <Target className="w-12 h-12 mb-3 opacity-50" />
         <p className="text-sm">选择一个组件</p>
         <p className="text-xs mt-1">查看和编辑属性</p>
       </div>
@@ -141,6 +207,7 @@ function PropertiesTab() {
 
   const connections = relatedConnections();
   const details = renderComponentDetails(selectedComponent, isRunning, updateComponentProperty);
+  const shaftInfo = getShaftInfo();
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -158,6 +225,33 @@ function PropertiesTab() {
           <div className="data-value">#{selectedComponent.orderIndex}</div>
         </div>
       </div>
+
+      {shaftInfo && (
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+          <div className="text-xs text-cyan-300 font-medium mb-2 flex items-center gap-1.5">
+            <CircleDot className="w-3.5 h-3.5" />
+            同轴装配
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              onClick={() => shaftInfo.shaft && selectComponent(shaftInfo.shaftId)}
+              className="text-cyan-200 hover:text-cyan-100 underline underline-offset-2"
+            >
+              {shaftInfo.shaft?.name || '传动轴'}
+            </button>
+            <span className="text-cyan-400">+{shaftInfo.memberCount} 个组件</span>
+          </div>
+          {selectedComponent.mountedOnShaftId && (
+            <button
+              onClick={() => unmountComponentFromShaft(selectedComponent.id)}
+              className="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] text-cyan-300 hover:text-cyan-100 hover:bg-cyan-500/10 rounded py-1 transition-colors"
+            >
+              <Unlink className="w-3 h-3" />
+              从轴上卸下
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="border-t border-slate-700 pt-4">
         <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-3">
@@ -206,14 +300,24 @@ function PropertiesTab() {
                   conn.fromPulleyId === selectedComponent.id ? conn.toPulleyId : conn.fromPulleyId;
               }
               const otherComp = components.find((c) => c.id === otherId);
+              const isManual = (conn as any).manual;
               return (
                 <button
                   key={idx}
                   onClick={() => selectComponent(otherId)}
                   className="w-full text-left p-2 bg-slate-700/50 rounded hover:bg-slate-700 transition-colors"
                 >
-                  <div className="text-xs text-primary-400 mb-0.5">
-                    {isGear ? `齿轮啮合 ${(conn as any).ratio?.toFixed(2) || ''}` : '皮带连接'}
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-primary-400 text-xs">
+                      {isGear
+                        ? `齿轮啮合 1:${(conn as any).ratio?.toFixed(2) || ''}`
+                        : `皮带连接${isManual ? ' (手动)' : ''}`}
+                    </span>
+                    {isManual && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 bg-purple-500/20 text-purple-300 text-[10px] rounded">
+                        手动
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm text-slate-200">{otherComp?.name || '未知'}</div>
                 </button>
@@ -236,23 +340,78 @@ function PropertiesTab() {
   );
 }
 
-function ConnectionStatusBadge({ isConnected }: { isConnected: boolean }) {
+function PowerFlowVisualizer({ chain }: { chain: TransmissionChainInfo }) {
+  const setFocusComponentId = useSceneStore((s) => s.setFocusComponentId);
+  const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
+  const getTransmissionChainFn = useSceneStore((s) => s.getTransmissionChain);
+  const components = useSceneStore((s) => s.components);
+
+  const handleClick = (id: string) => {
+    setFocusComponentId(id);
+    const chainIds = getTransmissionChainFn(id);
+    setHighlightedChain(chainIds);
+    setTimeout(() => setFocusComponentId(null), 2000);
+  };
+
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${
-      isConnected ? 'bg-green-500/20 text-green-400' : 'bg-slate-600/50 text-slate-400'
-    }`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-400' : 'bg-slate-500'}`} />
-      {isConnected ? '已连接' : '未接入'}
-    </span>
+    <div className="space-y-1.5 p-3 bg-slate-900/60 rounded-lg border border-slate-700/50">
+      <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
+        <Activity className="w-3 h-3" />
+        功率流
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {chain.powerFlow.map((node, idx) => {
+          const comp = components.find((c) => c.id === node.componentId);
+          const rpm = Math.abs(node.speed).toFixed(0);
+          return (
+            <div key={node.componentId} className="flex items-center">
+              <button
+                onClick={() => handleClick(node.componentId)}
+                className={`px-2 py-1 rounded text-xs transition-all ${
+                  node.isBroken
+                    ? 'bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30'
+                    : 'bg-green-500/15 text-green-300 border border-green-500/25 hover:bg-green-500/25'
+                }`}
+              >
+                <div className="font-medium">{comp?.name?.slice(0, 10) || '?'}</div>
+                <div className="font-mono text-[10px] opacity-80">
+                  {rpm} RPM {node.direction === 1 ? '↻' : '↺'}
+                </div>
+              </button>
+              {idx < chain.powerFlow.length - 1 && (
+                <ArrowRight className="w-3 h-3 text-slate-500 mx-0.5" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
-function StageRow({ stage, onClickComponent }: { stage: TransmissionStage; onClickComponent: (id: string) => void }) {
-  const connectionLabel = stage.connectionType === 'gear'
-    ? `齿轮啮合 1:${stage.ratio.toFixed(2)}`
-    : stage.connectionType === 'belt'
-    ? `皮带传动 1:${stage.ratio.toFixed(2)}`
-    : '电机驱动';
+function StageRow({
+  stage,
+  onClickComponent,
+}: {
+  stage: TransmissionStage;
+  onClickComponent: (id: string) => void;
+}) {
+  const typeLabel =
+    stage.connectionType === 'gear'
+      ? `齿轮 1:${stage.ratio.toFixed(2)}`
+      : stage.connectionType === 'belt'
+      ? `皮带 1:${stage.ratio.toFixed(2)}`
+      : stage.connectionType === 'coaxial'
+      ? '同轴 1:1'
+      : '电机驱动';
+  const typeColor =
+    stage.connectionType === 'gear'
+      ? 'text-orange-400'
+      : stage.connectionType === 'belt'
+      ? 'text-purple-400'
+      : stage.connectionType === 'coaxial'
+      ? 'text-cyan-400'
+      : 'text-yellow-400';
 
   return (
     <div className="flex items-center gap-2 py-1.5 text-xs">
@@ -264,15 +423,14 @@ function StageRow({ stage, onClickComponent }: { stage: TransmissionStage; onCli
       </button>
       <div className="flex flex-col items-center">
         <ArrowRight className="w-3 h-3 text-slate-500" />
-        <span className={`text-[10px] ${stage.directionChanges ? 'text-orange-400' : 'text-slate-500'}`}>
-          {connectionLabel}
-        </span>
+        <span className={`text-[10px] ${typeColor}`}>{typeLabel}</span>
         <span className="text-[10px] text-slate-500">
-          {stage.inputSpeed.toFixed(0)} → {stage.outputSpeed.toFixed(0)} RPM
+          {stage.inputSpeed.toFixed(0)} → {stage.outputSpeed.toFixed(0)}
         </span>
         {stage.directionChanges && (
           <span className="text-[10px] text-orange-400 flex items-center gap-0.5">
-            <RotateCcw className="w-2.5 h-2.5" />反向
+            <RotateCcw className="w-2.5 h-2.5" />
+            反向
           </span>
         )}
       </div>
@@ -286,45 +444,201 @@ function StageRow({ stage, onClickComponent }: { stage: TransmissionStage; onCli
   );
 }
 
-function ChainCard({ chain, onClickComponent }: { chain: TransmissionChainInfo; onClickComponent: (id: string) => void }) {
+function ChainCard({ chain }: { chain: TransmissionChainInfo }) {
   const [expanded, setExpanded] = useState(true);
+  const selectedChainId = useSceneStore((s) => s.selectedChainId);
+  const setSelectedChainId = useSceneStore((s) => s.setSelectedChainId);
+  const setFocusComponentId = useSceneStore((s) => s.setFocusComponentId);
+  const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
+  const getTransmissionChainFn = useSceneStore((s) => s.getTransmissionChain);
+  const isSelected = selectedChainId === chain.id;
+
+  const handleClickComponent = (id: string) => {
+    setFocusComponentId(id);
+    const chainIds = getTransmissionChainFn(id);
+    setHighlightedChain(chainIds);
+    setTimeout(() => setFocusComponentId(null), 2000);
+  };
 
   return (
-    <div className="border border-slate-700 rounded-lg overflow-hidden bg-slate-800/30">
+    <div
+      className={`border rounded-lg overflow-hidden transition-colors ${
+        isSelected
+          ? 'border-primary-500 bg-primary-500/5'
+          : 'border-slate-700 bg-slate-800/30'
+      }`}
+    >
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setExpanded(!expanded);
+          setSelectedChainId(isSelected ? null : chain.id);
+          setHighlightedChain(chain.componentIds);
+        }}
         className="w-full p-3 flex items-center gap-2 hover:bg-slate-700/30 transition-colors"
       >
-        {expanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+        {expanded ? (
+          <ChevronDown className="w-4 h-4 text-slate-400" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        )}
         <Zap className="w-4 h-4 text-yellow-400" />
-        <span className="text-sm font-medium text-slate-200">{chain.motorName}</span>
+        <span className="text-sm font-medium text-slate-200 text-left flex-1">
+          {chain.motorName}
+        </span>
         <span className="text-xs text-slate-500">{chain.motorSpeed} RPM</span>
         <span className="text-xs text-slate-500">{chain.motorDirection === 1 ? '↻' : '↺'}</span>
         <div className="flex-1" />
-        <span className="text-xs text-slate-400">{chain.stages.length} 级传动</span>
+        {chain.hasBrokenChain && (
+          <span className="text-[10px] text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+            <AlertTriangle className="w-3 h-3" />
+            断链
+          </span>
+        )}
+        <span className="text-xs text-slate-400">{chain.stages.length} 级</span>
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="px-3 pb-3 space-y-3">
+          <PowerFlowVisualizer chain={chain} />
+
           <div className="flex items-center justify-between text-xs bg-slate-900/50 rounded p-2">
-            <span className="text-slate-400">总传动比:</span>
+            <span className="text-slate-400 flex items-center gap-1">
+              <BarChart2 className="w-3 h-3" />
+              总传动比:
+            </span>
             <span className="font-mono text-primary-400">1 : {chain.totalRatio.toFixed(3)}</span>
           </div>
 
           <div className="flex items-center justify-between text-xs bg-slate-900/50 rounded p-2">
-            <span className="text-slate-400">最终输出:</span>
-            <span className="font-mono text-green-400">
-              {chain.finalOutputSpeed.toFixed(1)} RPM {chain.finalOutputDirection === 1 ? '↻' : '↺'}
+            <span className="text-slate-400 flex items-center gap-1">
+              <Activity className="w-3 h-3" />
+              最终输出:
+            </span>
+            <span
+              className={`font-mono ${
+                chain.finalOutputSpeed === 0 ? 'text-red-400' : 'text-green-400'
+              }`}
+            >
+              {chain.finalOutputSpeed.toFixed(1)} RPM{' '}
+              {chain.finalOutputDirection === 1 ? '↻' : '↺'}
             </span>
           </div>
 
-          <div className="border-t border-slate-700 pt-2 space-y-1">
-            <div className="text-xs text-slate-400 mb-1">传动链路:</div>
-            {chain.stages.map((stage, idx) => (
-              <StageRow key={idx} stage={stage} onClickComponent={onClickComponent} />
-            ))}
-          </div>
+          {chain.stages.length > 0 && (
+            <div className="border-t border-slate-700 pt-2 space-y-1">
+              <div className="text-xs text-slate-400 mb-1">传动链路:</div>
+              {chain.stages.map((stage, idx) => (
+                <StageRow
+                  key={idx}
+                  stage={stage}
+                  onClickComponent={handleClickComponent}
+                />
+              ))}
+            </div>
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function MeasurementRow({
+  measurement,
+  components,
+}: {
+  measurement: MeasurementPair;
+  components: SceneComponent[];
+}) {
+  const setFocusComponentId = useSceneStore((s) => s.setFocusComponentId);
+  const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
+  const getTransmissionChainFn = useSceneStore((s) => s.getTransmissionChain);
+  const snapNearestGearMesh = useSceneStore((s) => s.snapNearestGearMesh);
+  const snapNearestCoaxial = useSceneStore((s) => s.snapNearestCoaxial);
+
+  const other = components.find((c) => c.id === measurement.componentBId);
+  const handleFocus = () => {
+    setFocusComponentId(measurement.componentBId);
+    const chainIds = getTransmissionChainFn(measurement.componentBId);
+    setHighlightedChain(chainIds);
+    setTimeout(() => setFocusComponentId(null), 2000);
+  };
+
+  let typeLabel = '';
+  let typeColor = 'text-slate-400';
+  let showSnap = false;
+  let snapType: 'gear' | 'coaxial' | null = null;
+  let deviationText = '';
+  let deviationColor = '';
+
+  switch (measurement.type) {
+    case 'gear-mesh':
+      typeLabel = '齿轮啮合';
+      typeColor = 'text-orange-400';
+      showSnap = true;
+      snapType = 'gear';
+      break;
+    case 'belt-length':
+      typeLabel = '皮带周长';
+      typeColor = 'text-purple-400';
+      break;
+    default:
+      typeLabel = '中心距';
+  }
+
+  if (measurement.deviation !== undefined) {
+    const abs = Math.abs(measurement.deviation);
+    if (measurement.type === 'gear-mesh') {
+      if (abs < 0.05) {
+        deviationText = '✓ 已啮合';
+        deviationColor = 'text-green-400';
+      } else if (abs < 0.2) {
+        deviationText = `${measurement.deviation > 0 ? '+' : ''}${measurement.deviation.toFixed(2)}`;
+        deviationColor = 'text-yellow-400';
+      } else {
+        deviationText = `${measurement.deviation > 0 ? '+' : ''}${measurement.deviation.toFixed(2)}`;
+        deviationColor = 'text-slate-400';
+      }
+    } else {
+      deviationText = `${measurement.deviation > 0 ? '+' : ''}${measurement.deviation.toFixed(2)}`;
+      deviationColor = 'text-slate-400';
+    }
+  }
+
+  return (
+    <div className="p-2 bg-slate-700/30 rounded text-xs space-y-1.5">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={handleFocus}
+          className="text-slate-200 hover:text-slate-100 font-medium text-left"
+        >
+          → {other?.name || '?'}
+        </button>
+        <span className={`text-[10px] ${typeColor}`}>{typeLabel}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-slate-400 text-[11px]">
+          {measurement.type === 'gear-mesh' && measurement.targetValue !== undefined
+            ? `目标: ${measurement.targetValue.toFixed(2)}`
+            : measurement.type === 'belt-length'
+            ? `轮距: ${measurement.targetValue?.toFixed(2)}`
+            : ''}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className={`font-mono ${deviationColor || 'text-slate-200'}`}>
+            {measurement.currentValue.toFixed(2)}
+          </span>
+          {deviationText && <span className={`text-[10px] ${deviationColor}`}>{deviationText}</span>}
+        </div>
+      </div>
+      {showSnap && snapType === 'gear' && (
+        <button
+          onClick={() => snapNearestGearMesh(measurement.componentAId)}
+          disabled={Math.abs(measurement.deviation || 0) < 0.01 || Math.abs(measurement.deviation || 0) > 1.5}
+          className="w-full mt-1 flex items-center justify-center gap-1 py-1 text-[10px] bg-orange-500/15 text-orange-300 hover:bg-orange-500/25 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Magnet className="w-3 h-3" />
+          吸附到相切
+        </button>
       )}
     </div>
   );
@@ -338,21 +652,33 @@ function TransmissionTab() {
   const setFocusComponentId = useSceneStore((s) => s.setFocusComponentId);
   const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
   const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
+  const pendingShaftSelection = useSceneStore((s) => s.pendingShaftSelection);
+  const measurements = useSceneStore((s) => s.measurements);
+  const snappingSuggestions = useSceneStore((s) => s.snappingSuggestions);
+  const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
+  const snapComponentToSuggestion = useSceneStore((s) => s.snapComponentToSuggestion);
+  const getShaftAssemblies = useSceneStore((s) => s.getShaftAssemblies);
 
   const chains = getAllTransmissionChains(components, gearConnections, beltConnections);
 
   const connectedIds = new Set<string>();
-  gearConnections.forEach((gc) => { connectedIds.add(gc.gearAId); connectedIds.add(gc.gearBId); });
-  beltConnections.forEach((bc) => { connectedIds.add(bc.fromPulleyId); connectedIds.add(bc.toPulleyId); });
+  gearConnections.forEach((gc) => {
+    connectedIds.add(gc.gearAId);
+    connectedIds.add(gc.gearBId);
+  });
+  beltConnections.forEach((bc) => {
+    connectedIds.add(bc.fromPulleyId);
+    connectedIds.add(bc.toPulleyId);
+  });
   const motors = components.filter((c) => c.type === ComponentType.MOTOR);
   motors.forEach((m) => {
-    const nearby = components.filter((c) =>
-      c.type === ComponentType.GEAR || c.type === ComponentType.PULLEY
-    ).filter((c) => {
-      const dx = c.position.x - m.position.x;
-      const dz = c.position.z - m.position.z;
-      return Math.sqrt(dx * dx + dz * dz) < 1.5;
-    });
+    const nearby = components
+      .filter((c) => c.type === ComponentType.GEAR || c.type === ComponentType.PULLEY)
+      .filter((c) => {
+        const dx = c.position.x - m.position.x;
+        const dz = c.position.z - m.position.z;
+        return Math.sqrt(dx * dx + dz * dz) < 1.5;
+      });
     nearby.forEach((n) => connectedIds.add(n.id));
     connectedIds.add(m.id);
   });
@@ -366,6 +692,11 @@ function TransmissionTab() {
     setTimeout(() => setFocusComponentId(null), 2000);
   };
 
+  const shaftAssemblies = getShaftAssemblies();
+  const activeAssemblies = Array.from(shaftAssemblies.entries()).filter(
+    ([, ids]) => ids.length > 1
+  );
+
   if (connectionEditMode === 'belt') {
     return (
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -377,7 +708,7 @@ function TransmissionTab() {
           <div className="text-xs text-slate-400 space-y-1">
             <p>1. 点击第一个皮带轮选中它</p>
             <p>2. 点击第二个皮带轮创建或删除皮带连接</p>
-            <p>3. 再次点击同一个皮带轮可取消选择</p>
+            <p>3. 手动连接的皮带不受自动检测影响</p>
           </div>
         </div>
 
@@ -392,7 +723,10 @@ function TransmissionTab() {
               const a = components.find((c) => c.id === bc.fromPulleyId);
               const b = components.find((c) => c.id === bc.toPulleyId);
               return (
-                <div key={bc.id} className="flex items-center gap-2 p-2 bg-slate-700/30 rounded text-xs">
+                <div
+                  key={bc.id}
+                  className="flex items-center gap-2 p-2 bg-slate-700/30 rounded text-xs"
+                >
                   <button
                     onClick={() => handleClickComponent(bc.fromPulleyId)}
                     className="px-2 py-1 bg-slate-700 rounded hover:bg-slate-600"
@@ -406,11 +740,81 @@ function TransmissionTab() {
                   >
                     {b?.name || bc.toPulleyId.slice(0, 4)}
                   </button>
+                  {bc.manual && (
+                    <span className="ml-auto text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
+                      手动
+                    </span>
+                  )}
                 </div>
               );
             })
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (connectionEditMode === 'shaft') {
+    return (
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
+          <div className="text-sm font-medium text-cyan-300 flex items-center gap-2 mb-1">
+            <CircleDot className="w-4 h-4" />
+            同轴装配模式
+          </div>
+          <div className="text-xs text-slate-400 space-y-1">
+            <p>1. 先点击一根传动轴或一个组件</p>
+            <p>2. 再点击要装配的组件/轴</p>
+            <p>3. 同轴的组件将同速同向转动</p>
+          </div>
+          {pendingShaftSelection && (
+            <div className="mt-2 pt-2 border-t border-cyan-500/20 text-xs text-cyan-200">
+              已选中:{' '}
+              {components.find((c) => c.id === pendingShaftSelection)?.name || '?'}
+              <span className="text-slate-400 ml-2">(再次点击取消)</span>
+            </div>
+          )}
+        </div>
+
+        {activeAssemblies.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              现有同轴装配 ({activeAssemblies.length})
+            </div>
+            {activeAssemblies.map(([shaftId, memberIds]) => {
+              const shaft = components.find((c) => c.id === shaftId);
+              const members = memberIds.filter((id) => id !== shaftId);
+              return (
+                <div
+                  key={shaftId}
+                  className="p-2 bg-slate-700/30 rounded space-y-1.5"
+                >
+                  <button
+                    onClick={() => handleClickComponent(shaftId)}
+                    className="w-full text-left text-xs font-medium text-cyan-300 hover:text-cyan-200 flex items-center gap-1.5"
+                  >
+                    <CircleDot className="w-3 h-3" />
+                    {shaft?.name || '轴'}
+                  </button>
+                  <div className="flex flex-wrap gap-1.5 pl-5">
+                    {members.map((mid) => {
+                      const mc = components.find((c) => c.id === mid);
+                      return (
+                        <button
+                          key={mid}
+                          onClick={() => handleClickComponent(mid)}
+                          className="px-2 py-0.5 text-[11px] bg-slate-700 rounded hover:bg-slate-600 text-slate-200"
+                        >
+                          {mc?.name || '?'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -428,7 +832,9 @@ function TransmissionTab() {
           </div>
           <div className="space-y-3">
             <div>
-              <div className="text-xs text-slate-400 mb-1">齿轮啮合: {gearConnections.length}</div>
+              <div className="text-xs text-slate-400 mb-1">
+                齿轮啮合: {gearConnections.length}
+              </div>
               {gearConnections.length === 0 ? (
                 <div className="text-xs text-slate-600">暂无</div>
               ) : (
@@ -437,7 +843,10 @@ function TransmissionTab() {
                     const a = components.find((c) => c.id === gc.gearAId);
                     const b = components.find((c) => c.id === gc.gearBId);
                     return (
-                      <div key={gc.id} className="flex items-center gap-2 text-xs p-1.5 bg-slate-800/50 rounded">
+                      <div
+                        key={gc.id}
+                        className="flex items-center gap-2 text-xs p-1.5 bg-slate-800/50 rounded"
+                      >
                         <button
                           onClick={() => handleClickComponent(gc.gearAId)}
                           className="text-primary-300 hover:text-primary-200"
@@ -451,7 +860,9 @@ function TransmissionTab() {
                         >
                           {b?.name || '?'}
                         </button>
-                        <span className="text-slate-500 ml-auto">1:{gc.ratio.toFixed(2)}</span>
+                        <span className="text-slate-500 ml-auto">
+                          1:{gc.ratio.toFixed(2)}
+                        </span>
                       </div>
                     );
                   })}
@@ -459,7 +870,9 @@ function TransmissionTab() {
               )}
             </div>
             <div>
-              <div className="text-xs text-slate-400 mb-1">皮带连接: {beltConnections.length}</div>
+              <div className="text-xs text-slate-400 mb-1">
+                皮带连接: {beltConnections.length}
+              </div>
               {beltConnections.length === 0 ? (
                 <div className="text-xs text-slate-600">暂无</div>
               ) : (
@@ -468,7 +881,10 @@ function TransmissionTab() {
                     const a = components.find((c) => c.id === bc.fromPulleyId);
                     const b = components.find((c) => c.id === bc.toPulleyId);
                     return (
-                      <div key={bc.id} className="flex items-center gap-2 text-xs p-1.5 bg-slate-800/50 rounded">
+                      <div
+                        key={bc.id}
+                        className="flex items-center gap-2 text-xs p-1.5 bg-slate-800/50 rounded"
+                      >
                         <button
                           onClick={() => handleClickComponent(bc.fromPulleyId)}
                           className="text-purple-300 hover:text-purple-200"
@@ -482,6 +898,11 @@ function TransmissionTab() {
                         >
                           {b?.name || '?'}
                         </button>
+                        {bc.manual && (
+                          <span className="ml-auto text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded">
+                            手动
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -490,6 +911,96 @@ function TransmissionTab() {
             </div>
           </div>
         </div>
+
+        {activeAssemblies.length > 0 && (
+          <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
+            <div className="text-sm font-medium text-cyan-300 flex items-center gap-2 mb-2">
+              <CircleDot className="w-4 h-4" />
+              同轴装配 ({activeAssemblies.length})
+            </div>
+            <div className="space-y-2">
+              {activeAssemblies.map(([shaftId, memberIds]) => {
+                const shaft = components.find((c) => c.id === shaftId);
+                const members = memberIds.filter((id) => id !== shaftId);
+                return (
+                  <div key={shaftId} className="text-xs">
+                    <button
+                      onClick={() => handleClickComponent(shaftId)}
+                      className="text-cyan-200 hover:text-cyan-100"
+                    >
+                      {shaft?.name}
+                    </button>
+                    <span className="text-slate-500 mx-1">+{members.length}</span>
+                    <div className="flex flex-wrap gap-1 mt-1 ml-3">
+                      {members.map((mid) => {
+                        const mc = components.find((c) => c.id === mid);
+                        return (
+                          <button
+                            key={mid}
+                            onClick={() => handleClickComponent(mid)}
+                            className="px-1.5 py-0.5 bg-slate-700/50 rounded text-[10px] text-slate-300 hover:bg-slate-600"
+                          >
+                            {mc?.name?.slice(0, 8) || '?'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {selectedComponentId && measurements.length > 0 && (
+          <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-3">
+            <div className="text-sm font-medium text-slate-300 flex items-center gap-2 mb-3">
+              <Ruler className="w-4 h-4" />
+              测量工具
+            </div>
+            <div className="text-xs text-slate-400 mb-2">
+              选中: {components.find((c) => c.id === selectedComponentId)?.name}
+            </div>
+            <div className="space-y-2 max-h-56 overflow-y-auto">
+              {measurements.slice(0, 10).map((m) => (
+                <MeasurementRow key={m.id} measurement={m} components={components} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {selectedComponentId && snappingSuggestions.length > 0 && (
+          <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3">
+            <div className="text-sm font-medium text-orange-300 flex items-center gap-2 mb-2">
+              <Magnet className="w-4 h-4" />
+              吸附建议
+            </div>
+            <div className="space-y-1.5">
+              {snappingSuggestions.slice(0, 5).map((s, idx) => {
+                const target = components.find((c) => c.id === s.targetComponentId);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => snapComponentToSuggestion(selectedComponentId, s)}
+                    className="w-full flex items-center justify-between text-xs p-2 bg-slate-700/30 rounded hover:bg-slate-700/60 transition-colors text-left"
+                  >
+                    <div>
+                      <div className="text-slate-200 font-medium">
+                        {s.snapType === 'gear-mesh'
+                          ? `与 ${target?.name} 相切`
+                          : `与 ${target?.name} 同轴`}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        偏移: {s.distance.toFixed(2)}
+                      </div>
+                    </div>
+                    <Magnet className="w-3.5 h-3.5 text-orange-400" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {unconnectedComponents.length > 0 && (
           <div className="space-y-2">
@@ -504,9 +1015,11 @@ function TransmissionTab() {
                   onClick={() => handleClickComponent(c.id)}
                   className="w-full flex items-center gap-2 p-2 bg-slate-700/30 rounded text-xs hover:bg-slate-700/50 transition-colors"
                 >
-                  <ConnectionStatusBadge isConnected={false} />
+                  <StatusBadge ok={false} label="未接入" />
                   <span className="text-slate-300">{c.name}</span>
-                  <span className="text-slate-500 ml-auto">{getComponentTypeName(c.type)}</span>
+                  <span className="text-slate-500 ml-auto">
+                    {getComponentTypeName(c.type)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -541,9 +1054,24 @@ function TransmissionTab() {
           <p className="text-xs mt-1">检查电机是否靠近齿轮或皮带轮</p>
         </div>
       ) : (
-        chains.map((chain) => (
-          <ChainCard key={chain.id} chain={chain} onClickComponent={handleClickComponent} />
-        ))
+        chains.map((chain) => <ChainCard key={chain.id} chain={chain} />)
+      )}
+
+      {selectedComponentId && measurements.length > 0 && (
+        <div className="mt-4 border-t border-slate-700 pt-3 space-y-2">
+          <div className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Ruler className="w-3.5 h-3.5" />
+            实时测量
+          </div>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+            {measurements
+              .filter((m) => m.type !== 'center-distance')
+              .slice(0, 6)
+              .map((m) => (
+                <MeasurementRow key={m.id} measurement={m} components={components} />
+              ))}
+          </div>
+        </div>
       )}
     </div>
   );

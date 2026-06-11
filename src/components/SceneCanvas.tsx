@@ -26,14 +26,26 @@ function ConnectionManager() {
   const updateComponentSpeeds = useSceneStore((s) => s.updateComponentSpeeds);
   const gearConnections = useSceneStore((s) => s.gearConnections);
   const beltConnections = useSceneStore((s) => s.beltConnections);
+  const manualBeltKeys = useSceneStore((s) => s.manualBeltKeys);
+  const deletedManualBeltKeys = useSceneStore((s) => s.deletedManualBeltKeys);
+  const updateMeasurements = useSceneStore((s) => s.updateMeasurements);
+  const updateSnappingSuggestions = useSceneStore((s) => s.updateSnappingSuggestions);
 
   const lastGearConnsRef = useRef<string>('');
   const lastBeltConnsRef = useRef<string>('');
   const lastSpeedsRef = useRef<string>('');
+  const lastComponentsRef = useRef<string>('');
 
   useEffect(() => {
+    const compsStr = components.map((c) => `${c.id}:${c.position.x.toFixed(2)},${c.position.y.toFixed(2)},${c.position.z.toFixed(2)}`).join('|');
+    if (compsStr !== lastComponentsRef.current) {
+      lastComponentsRef.current = compsStr;
+      updateMeasurements();
+      updateSnappingSuggestions();
+    }
+
     const gearConns = detectGearConnections(components);
-    const beltConns = detectBeltConnections(components);
+    const beltConns = detectBeltConnections(components, manualBeltKeys, deletedManualBeltKeys);
     const gearConnsStr = JSON.stringify(gearConns);
     const beltConnsStr = JSON.stringify(beltConns);
 
@@ -45,7 +57,7 @@ function ConnectionManager() {
       lastBeltConnsRef.current = beltConnsStr;
       setBeltConnections(beltConns);
     }
-  }, [components, setGearConnections, setBeltConnections]);
+  }, [components, manualBeltKeys, deletedManualBeltKeys, setGearConnections, setBeltConnections, updateMeasurements, updateSnappingSuggestions]);
 
   useEffect(() => {
     if (isRunning) {
@@ -144,6 +156,58 @@ interface SceneContentProps {
   background: BackgroundType;
 }
 
+function CameraFocusController() {
+  const { camera } = useThree();
+  const controlsRef = useRef<any>(null);
+  const focusComponentId = useSceneStore((s) => s.focusComponentId);
+  const components = useSceneStore((s) => s.components);
+  const targetRef = useRef<THREE.Vector3 | null>(null);
+  const animRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!focusComponentId) return;
+    const comp = components.find((c) => c.id === focusComponentId);
+    if (!comp) return;
+
+    targetRef.current = new THREE.Vector3(
+      comp.position.x,
+      comp.position.y + 0.5,
+      comp.position.z
+    );
+
+    const startPos = camera.position.clone();
+    const dir = new THREE.Vector3().subVectors(startPos, targetRef.current).normalize();
+    const endPos = targetRef.current.clone().add(dir.multiplyScalar(6));
+    const startTime = performance.now();
+    const duration = 500;
+
+    cancelAnimationFrame(animRef.current);
+    const animate = () => {
+      const t = Math.min(1, (performance.now() - startTime) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      camera.position.lerpVectors(startPos, endPos, eased);
+      if (controlsRef.current && targetRef.current) {
+        controlsRef.current.target.lerp(targetRef.current, eased);
+        controlsRef.current.update();
+      }
+      if (t < 1) animRef.current = requestAnimationFrame(animate);
+    };
+    animRef.current = requestAnimationFrame(animate);
+  }, [focusComponentId, components, camera]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enableDamping
+      dampingFactor={0.05}
+      minDistance={3}
+      maxDistance={60}
+      maxPolarAngle={Math.PI / 2 - 0.05}
+    />
+  );
+}
+
 function SceneContent({ background }: SceneContentProps) {
   const selectComponent = useSceneStore((s) => s.selectComponent);
 
@@ -173,14 +237,7 @@ function SceneContent({ background }: SceneContentProps) {
         far={10}
       />
 
-      <OrbitControls
-        makeDefault
-        enableDamping
-        dampingFactor={0.05}
-        minDistance={3}
-        maxDistance={60}
-        maxPolarAngle={Math.PI / 2 - 0.05}
-      />
+      <CameraFocusController />
 
       <EffectComposer multisampling={0} enableNormalPass={false}>
         <Bloom

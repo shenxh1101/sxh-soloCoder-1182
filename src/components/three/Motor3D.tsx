@@ -9,9 +9,12 @@ interface Motor3DProps {
   isSelected: boolean;
   isHighlighted: boolean;
   isFocused: boolean;
+  isMountedOnShaft?: boolean;
+  isShaftEditTarget?: boolean;
+  isPendingShaft?: boolean;
 }
 
-export function Motor3D({ component, isSelected, isHighlighted, isFocused }: Motor3DProps) {
+export function Motor3D({ component, isSelected, isHighlighted, isFocused, isMountedOnShaft, isShaftEditTarget, isPendingShaft }: Motor3DProps) {
   const fanRef = useRef<THREE.Group>(null);
   const isRunning = useSceneStore((s) => s.isRunning);
   const selectComponent = useSceneStore((s) => s.selectComponent);
@@ -21,7 +24,15 @@ export function Motor3D({ component, isSelected, isHighlighted, isFocused }: Mot
   let emissive = '#7f1d1d';
   let emissiveIntensity = 0.1;
 
-  if (isFocused) {
+  if (isPendingShaft) {
+    bodyColor = '#06b6d4';
+    emissive = '#0891b2';
+    emissiveIntensity = 0.5;
+  } else if (isShaftEditTarget && connectionEditMode === 'shaft') {
+    bodyColor = '#22d3ee';
+    emissive = '#06b6d4';
+    emissiveIntensity = 0.5;
+  } else if (isFocused) {
     bodyColor = '#fbbf24';
     emissive = '#d97706';
     emissiveIntensity = 0.4;
@@ -42,15 +53,25 @@ export function Motor3D({ component, isSelected, isHighlighted, isFocused }: Mot
     }
   });
 
+  const handleShaftClick = useSceneStore((s) => s.handleShaftEditClick);
+
   const handleClick = (e: any) => {
     e.stopPropagation();
     if (connectionEditMode === 'belt') return;
+    if (connectionEditMode === 'shaft') {
+      handleShaftClick(component.id);
+      return;
+    }
     selectComponent(component.id);
   };
 
   const handlePointerOver = (e: any) => {
     e.stopPropagation();
-    document.body.style.cursor = 'pointer';
+    if (connectionEditMode === 'shaft') {
+      document.body.style.cursor = isPendingShaft || isShaftEditTarget ? 'copy' : 'pointer';
+    } else {
+      document.body.style.cursor = 'pointer';
+    }
   };
 
   const handlePointerOut = () => {
@@ -107,16 +128,39 @@ export function Motor3D({ component, isSelected, isHighlighted, isFocused }: Mot
         </mesh>
       )}
 
-      {(isSelected || isHighlighted || isFocused) && (
+      {(isSelected || isHighlighted || isFocused || isPendingShaft || (isShaftEditTarget && connectionEditMode === 'shaft')) && (
         <mesh position={[0, 0.3, 0]}>
           <cylinderGeometry args={[0.6, 0.6, 0.8, 32]} />
           <meshBasicMaterial
-            color={isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
+            color={isPendingShaft ? '#06b6d4' : isShaftEditTarget && connectionEditMode === 'shaft' ? '#22d3ee' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
             transparent
             opacity={0.15}
             side={THREE.BackSide}
           />
         </mesh>
+      )}
+
+      {isMountedOnShaft && (
+        <>
+          <mesh position={[0, -0.15, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.75, 0.85, 48]} />
+            <meshBasicMaterial
+              color="#06b6d4"
+              transparent
+              opacity={0.4}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh position={[0, -0.14, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.78, 0.8, 48]} />
+            <meshBasicMaterial
+              color="#22d3ee"
+              transparent
+              opacity={0.9}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
       )}
     </group>
   );

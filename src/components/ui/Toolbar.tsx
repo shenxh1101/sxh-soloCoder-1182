@@ -14,6 +14,8 @@ import {
   Highlighter,
   Link,
   Link2Off,
+  GitBranch,
+  CircleDot,
 } from 'lucide-react';
 import { useSceneStore } from '../../store/useSceneStore';
 import {
@@ -45,6 +47,7 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
   const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
   const setConnectionEditMode = useSceneStore((s) => s.setConnectionEditMode);
   const setPendingBeltSelection = useSceneStore((s) => s.setPendingBeltSelection);
+  const setPendingShaftSelection = useSceneStore((s) => s.setPendingShaftSelection);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -137,12 +140,23 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
     }
   };
 
-  const toggleConnectionMode = () => {
+  const toggleBeltMode = () => {
     if (connectionEditMode === 'belt') {
       setConnectionEditMode(null);
       setPendingBeltSelection(null);
     } else {
       setConnectionEditMode('belt');
+      setPendingShaftSelection(null);
+    }
+  };
+
+  const toggleShaftMode = () => {
+    if (connectionEditMode === 'shaft') {
+      setConnectionEditMode(null);
+      setPendingShaftSelection(null);
+    } else {
+      setConnectionEditMode('shaft');
+      setPendingBeltSelection(null);
     }
   };
 
@@ -170,19 +184,36 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
 
       <div className="flex items-center gap-1 px-2 border-r border-slate-700">
         <button
-          onClick={toggleConnectionMode}
+          onClick={toggleBeltMode}
           className={`btn ${connectionEditMode === 'belt' ? 'btn-accent' : 'btn-ghost'}`}
-          title={connectionEditMode === 'belt' ? '退出皮带编辑模式' : '进入皮带编辑模式'}
+          title={connectionEditMode === 'belt' ? '退出皮带编辑模式' : '进入皮带编辑模式：点选两个皮带轮创建/删除皮带'}
         >
           {connectionEditMode === 'belt' ? (
             <>
               <Link2Off className="w-4 h-4" />
-              退出编辑
+              退出皮带
             </>
           ) : (
             <>
               <Link className="w-4 h-4" />
-              连接编辑
+              皮带编辑
+            </>
+          )}
+        </button>
+        <button
+          onClick={toggleShaftMode}
+          className={`btn ${connectionEditMode === 'shaft' ? 'bg-cyan-600 hover:bg-cyan-500 text-white' : 'btn-ghost'}`}
+          title={connectionEditMode === 'shaft' ? '退出同轴装配模式' : '进入同轴装配模式：先选组件再选轴，完成同轴装配'}
+        >
+          {connectionEditMode === 'shaft' ? (
+            <>
+              <CircleDot className="w-4 h-4" />
+              退出同轴
+            </>
+          ) : (
+            <>
+              <GitBranch className="w-4 h-4" />
+              同轴装配
             </>
           )}
         </button>

@@ -15,9 +15,12 @@ interface Gear3DProps {
   isBeltEditTarget: boolean;
   isPendingBelt: boolean;
   showMeshPreview: boolean;
+  isMountedOnShaft?: boolean;
+  isShaftEditTarget?: boolean;
+  isPendingShaft?: boolean;
 }
 
-export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBeltEditTarget, isPendingBelt, showMeshPreview }: Gear3DProps) {
+export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBeltEditTarget, isPendingBelt, showMeshPreview, isMountedOnShaft, isShaftEditTarget, isPendingShaft }: Gear3DProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const isRunning = useSceneStore((s) => s.isRunning);
   const selectComponent = useSceneStore((s) => s.selectComponent);
@@ -36,6 +39,14 @@ export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBelt
     baseColor = '#22c55e';
     emissiveColor = '#16a34a';
     emissiveIntensity = 0.4;
+  } else if (isPendingShaft) {
+    baseColor = '#06b6d4';
+    emissiveColor = '#0891b2';
+    emissiveIntensity = 0.5;
+  } else if (isShaftEditTarget && connectionEditMode === 'shaft') {
+    baseColor = '#22d3ee';
+    emissiveColor = '#06b6d4';
+    emissiveIntensity = 0.5;
   } else if (isFocused) {
     baseColor = '#fbbf24';
     emissiveColor = '#d97706';
@@ -62,9 +73,15 @@ export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBelt
     }
   });
 
+  const handleShaftClick = useSceneStore((s) => s.handleShaftEditClick);
+
   const handleClick = (e: any) => {
     e.stopPropagation();
     if (connectionEditMode === 'belt') return;
+    if (connectionEditMode === 'shaft') {
+      handleShaftClick(component.id);
+      return;
+    }
     selectComponent(component.id);
     const result = getTransmissionChain(component.id, gearConnections, beltConnections);
     setHighlightedChain(result);
@@ -72,7 +89,13 @@ export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBelt
 
   const handlePointerOver = (e: any) => {
     e.stopPropagation();
-    document.body.style.cursor = 'pointer';
+    if (connectionEditMode === 'shaft') {
+      document.body.style.cursor = isPendingShaft || isShaftEditTarget ? 'copy' : 'pointer';
+    } else if (connectionEditMode === 'belt') {
+      document.body.style.cursor = 'copy';
+    } else {
+      document.body.style.cursor = 'pointer';
+    }
   };
 
   const handlePointerOut = () => {
@@ -100,16 +123,39 @@ export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBelt
         />
       </mesh>
 
-      {(isSelected || isHighlighted || isFocused || isPendingBelt) && (
+      {(isSelected || isHighlighted || isFocused || isPendingBelt || isPendingShaft || (isShaftEditTarget && connectionEditMode === 'shaft')) && (
         <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[component.radius + 0.1, component.radius + 0.18, 64]} />
           <meshBasicMaterial
-            color={isPendingBelt ? '#a855f7' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
+            color={isPendingShaft ? '#06b6d4' : isShaftEditTarget && connectionEditMode === 'shaft' ? '#22d3ee' : isPendingBelt ? '#a855f7' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
             transparent
             opacity={0.9}
             side={THREE.DoubleSide}
           />
         </mesh>
+      )}
+
+      {isMountedOnShaft && (
+        <>
+          <mesh position={[0, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[component.radius + 0.22, component.radius + 0.3, 48]} />
+            <meshBasicMaterial
+              color="#06b6d4"
+              transparent
+              opacity={0.4}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[component.radius + 0.24, component.radius + 0.26, 48]} />
+            <meshBasicMaterial
+              color="#22d3ee"
+              transparent
+              opacity={0.9}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
       )}
 
       {showMeshPreview && (
