@@ -1,43 +1,58 @@
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GearComponent } from '../../types';
 import { createGearGeometry } from '../../utils/geometry';
 import { useSceneStore } from '../../store/useSceneStore';
 import { getTransmissionChain } from '../../engine/TransmissionEngine';
+import { ComponentType } from '../../types';
 
 interface Gear3DProps {
   component: GearComponent;
   isSelected: boolean;
   isHighlighted: boolean;
+  isFocused: boolean;
+  isBeltEditTarget: boolean;
+  isPendingBelt: boolean;
+  showMeshPreview: boolean;
 }
 
-export function Gear3D({ component, isSelected, isHighlighted }: Gear3DProps) {
+export function Gear3D({ component, isSelected, isHighlighted, isFocused, isBeltEditTarget, isPendingBelt, showMeshPreview }: Gear3DProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const groupRef = useRef<THREE.Group>(null);
   const isRunning = useSceneStore((s) => s.isRunning);
   const selectComponent = useSceneStore((s) => s.selectComponent);
   const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
-  const getTransmissionChainFn = useSceneStore.getState;
   const gearConnections = useSceneStore((s) => s.gearConnections);
   const beltConnections = useSceneStore((s) => s.beltConnections);
+  const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
 
-  const geometry = useMemo(
-    () => createGearGeometry(component.teeth, component.radius, component.thickness),
-    [component.teeth, component.radius, component.thickness]
-  );
+  const geometry = createGearGeometry(component.teeth, component.radius, component.thickness);
 
-  const baseColor = useMemo(() => {
-    if (isHighlighted) return '#f97316';
-    if (isSelected) return '#3b82f6';
-    return '#64748b';
-  }, [isSelected, isHighlighted]);
+  let baseColor = '#64748b';
+  let emissiveColor = '#000000';
+  let emissiveIntensity = 0;
 
-  const emissiveColor = useMemo(() => {
-    if (isHighlighted) return '#f97316';
-    if (isSelected) return '#1e40af';
-    return '#000000';
-  }, [isSelected, isHighlighted]);
+  if (showMeshPreview) {
+    baseColor = '#22c55e';
+    emissiveColor = '#16a34a';
+    emissiveIntensity = 0.4;
+  } else if (isFocused) {
+    baseColor = '#fbbf24';
+    emissiveColor = '#d97706';
+    emissiveIntensity = 0.5;
+  } else if (isPendingBelt) {
+    baseColor = '#a855f7';
+    emissiveColor = '#7c3aed';
+    emissiveIntensity = 0.4;
+  } else if (isHighlighted) {
+    baseColor = '#f97316';
+    emissiveColor = '#ea580c';
+    emissiveIntensity = 0.3;
+  } else if (isSelected) {
+    baseColor = '#3b82f6';
+    emissiveColor = '#1d4ed8';
+    emissiveIntensity = 0.3;
+  }
 
   useFrame((_, delta) => {
     if (meshRef.current && isRunning) {
@@ -49,41 +64,61 @@ export function Gear3D({ component, isSelected, isHighlighted }: Gear3DProps) {
 
   const handleClick = (e: any) => {
     e.stopPropagation();
+    if (connectionEditMode === 'belt') return;
     selectComponent(component.id);
     const result = getTransmissionChain(component.id, gearConnections, beltConnections);
     setHighlightedChain(result);
   };
 
+  const handlePointerOver = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePointerOut = () => {
+    document.body.style.cursor = 'auto';
+  };
+
   return (
-    <group
-      ref={groupRef}
-      position={[component.position.x, component.position.y, component.position.z]}
-      rotation={[component.rotation.x, component.rotation.y, component.rotation.z]}
-    >
+    <group>
       <mesh
         ref={meshRef}
         geometry={geometry}
         onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
         castShadow
         receiveShadow
       >
         <meshStandardMaterial
           color={baseColor}
           emissive={emissiveColor}
-          emissiveIntensity={isSelected || isHighlighted ? 0.3 : 0}
+          emissiveIntensity={emissiveIntensity}
           metalness={0.7}
           roughness={0.3}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {(isSelected || isHighlighted) && (
+      {(isSelected || isHighlighted || isFocused || isPendingBelt) && (
         <mesh position={[0, -0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[component.radius + 0.1, component.radius + 0.15, 64]} />
+          <ringGeometry args={[component.radius + 0.1, component.radius + 0.18, 64]} />
           <meshBasicMaterial
-            color={isHighlighted ? '#f97316' : '#3b82f6'}
+            color={isPendingBelt ? '#a855f7' : isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
             transparent
-            opacity={0.8}
+            opacity={0.9}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {showMeshPreview && (
+        <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[component.radius + 0.2, component.radius + 0.28, 48]} />
+          <meshBasicMaterial
+            color="#22c55e"
+            transparent
+            opacity={0.5}
             side={THREE.DoubleSide}
           />
         </mesh>

@@ -1,5 +1,11 @@
-import type { SceneComponent, GearConnection, BeltConnection } from '../types';
+import type { SceneComponent, GearConnection, BeltConnection, BackgroundType } from '../types';
 import { ComponentType } from '../types';
+
+export interface SaveDataSettings {
+  background: BackgroundType;
+  explosionView: boolean;
+  explosionFactor: number;
+}
 
 export interface SaveData {
   version: string;
@@ -7,19 +13,22 @@ export interface SaveData {
   components: SceneComponent[];
   gearConnections: GearConnection[];
   beltConnections: BeltConnection[];
+  settings?: SaveDataSettings;
 }
 
 export const saveSceneToJSON = (
   components: SceneComponent[],
   gearConnections: GearConnection[],
-  beltConnections: BeltConnection[]
+  beltConnections: BeltConnection[],
+  settings?: SaveDataSettings
 ): void => {
   const data: SaveData = {
-    version: '1.0.0',
+    version: '2.0.0',
     timestamp: Date.now(),
     components,
     gearConnections,
     beltConnections,
+    ...(settings ? { settings } : {}),
   };
 
   const json = JSON.stringify(data, null, 2);
@@ -35,18 +44,79 @@ export const saveSceneToJSON = (
   URL.revokeObjectURL(url);
 };
 
+const validateSaveData = (data: any): SaveData => {
+  if (!data || typeof data !== 'object') {
+    throw new Error('文件不是有效的 JSON 对象');
+  }
+
+  if (!Array.isArray(data.components)) {
+    throw new Error('缺少 components 数组');
+  }
+
+  const requiredFields = ['id', 'type', 'position', 'rotation'];
+  data.components.forEach((comp: any, idx: number) => {
+    requiredFields.forEach((field) => {
+      if (!(field in comp)) {
+        throw new Error(`组件 #${idx} 缺少字段: ${field}`);
+      }
+    });
+    if (!Object.values(ComponentType).includes(comp.type)) {
+      throw new Error(`组件 #${idx} 类型无效: ${comp.type}`);
+    }
+    if (!comp.position || typeof comp.position.x !== 'number') {
+      throw new Error(`组件 #${idx} position 格式无效`);
+    }
+  });
+
+  if (!Array.isArray(data.gearConnections)) {
+    data.gearConnections = [];
+  }
+  if (!Array.isArray(data.beltConnections)) {
+    data.beltConnections = [];
+  }
+
+  if (!data.settings) {
+    data.settings = {
+      background: 'dark',
+      explosionView: false,
+      explosionFactor: 1.5,
+    };
+  }
+
+  if (!data.version) {
+    data.version = '1.0.0';
+  }
+
+  return data as SaveData;
+};
+
 export const loadSceneFromJSON = (file: File): Promise<SaveData> => {
   return new Promise((resolve, reject) => {
+    if (!file.name.toLowerCase().endsWith('.json')) {
+      reject(new Error('请选择 .json 格式的文件'));
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = JSON.parse(e.target?.result as string);
-        resolve(data as SaveData);
-      } catch (err) {
-        reject(err);
+        const raw = e.target?.result as string;
+        if (!raw || raw.trim().length === 0) {
+          reject(new Error('文件为空'));
+          return;
+        }
+        const parsed = JSON.parse(raw);
+        const validated = validateSaveData(parsed);
+        resolve(validated);
+      } catch (err: any) {
+        if (err instanceof SyntaxError) {
+          reject(new Error(`JSON 解析错误: ${err.message}`));
+        } else {
+          reject(err);
+        }
       }
     };
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () => reject(new Error('读取文件失败: ' + (reader.error?.message || '未知错误')));
     reader.readAsText(file);
   });
 };

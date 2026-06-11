@@ -12,6 +12,8 @@ import {
   Layers,
   Maximize2,
   Highlighter,
+  Link,
+  Link2Off,
 } from 'lucide-react';
 import { useSceneStore } from '../../store/useSceneStore';
 import {
@@ -30,6 +32,8 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
   const beltConnections = useSceneStore((s) => s.beltConnections);
   const clearScene = useSceneStore((s) => s.clearScene);
   const loadScene = useSceneStore((s) => s.loadScene);
+  const setLoadError = useSceneStore((s) => s.setLoadError);
+  const getSaveData = useSceneStore((s) => s.getSaveData);
   const background = useSceneStore((s) => s.background);
   const setBackground = useSceneStore((s) => s.setBackground);
   const explosionView = useSceneStore((s) => s.explosionView);
@@ -38,11 +42,15 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
   const setExplosionFactor = useSceneStore((s) => s.setExplosionFactor);
   const setHighlightedChain = useSceneStore((s) => s.setHighlightedChain);
   const highlightedChain = useSceneStore((s) => s.highlightedChain);
+  const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
+  const setConnectionEditMode = useSceneStore((s) => s.setConnectionEditMode);
+  const setPendingBeltSelection = useSceneStore((s) => s.setPendingBeltSelection);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
-    saveSceneToJSON(components, gearConnections, beltConnections);
+    const saveData = getSaveData();
+    saveSceneToJSON(saveData.components, saveData.gearConnections, saveData.beltConnections, saveData.settings);
   };
 
   const handleLoad = () => {
@@ -54,10 +62,24 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
     if (file) {
       try {
         const data = await loadSceneFromJSON(file);
+        setLoadError(null);
         loadScene(data);
-      } catch (err) {
+      } catch (err: any) {
         console.error('加载失败:', err);
-        alert('加载文件失败，请检查文件格式');
+        let message = '加载文件失败';
+        let details = '';
+        if (err instanceof SyntaxError) {
+          message = 'JSON 格式错误';
+          details = err.message;
+        } else if (err.message?.includes('component')) {
+          message = '文件内容不完整';
+          details = '缺少必要的 components 字段';
+        } else if (err.message) {
+          details = err.message;
+        } else {
+          details = '未知错误';
+        }
+        setLoadError({ message, details, fileName: file.name });
       }
     }
     if (fileInputRef.current) {
@@ -67,7 +89,6 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
 
   const handleExportSteps = () => {
     if (components.length === 0) {
-      alert('没有组件可导出');
       return;
     }
     if (canvasRef.current) {
@@ -116,6 +137,15 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
     }
   };
 
+  const toggleConnectionMode = () => {
+    if (connectionEditMode === 'belt') {
+      setConnectionEditMode(null);
+      setPendingBeltSelection(null);
+    } else {
+      setConnectionEditMode('belt');
+    }
+  };
+
   return (
     <div className="panel px-2 py-1.5 flex items-center gap-1">
       <div className="flex items-center gap-1 pr-2 border-r border-slate-700">
@@ -133,6 +163,26 @@ export function Toolbar({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasEl
             <>
               <Play className="w-4 h-4" />
               启动
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="flex items-center gap-1 px-2 border-r border-slate-700">
+        <button
+          onClick={toggleConnectionMode}
+          className={`btn ${connectionEditMode === 'belt' ? 'btn-accent' : 'btn-ghost'}`}
+          title={connectionEditMode === 'belt' ? '退出皮带编辑模式' : '进入皮带编辑模式'}
+        >
+          {connectionEditMode === 'belt' ? (
+            <>
+              <Link2Off className="w-4 h-4" />
+              退出编辑
+            </>
+          ) : (
+            <>
+              <Link className="w-4 h-4" />
+              连接编辑
             </>
           )}
         </button>

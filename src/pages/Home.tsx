@@ -4,6 +4,7 @@ import { ComponentLibrary } from '../components/ui/ComponentLibrary';
 import { Toolbar } from '../components/ui/Toolbar';
 import { InfoPanel } from '../components/ui/InfoPanel';
 import { StatusBar } from '../components/ui/StatusBar';
+import { LoadErrorToast } from '../components/ui/LoadErrorToast';
 import { useSceneStore } from '../store/useSceneStore';
 
 export default function Home() {
@@ -19,6 +20,8 @@ export default function Home() {
         background === 'dark' ? 'bg-slate-900' : ''
       }`}
     >
+      <LoadErrorToast />
+
       <div className="p-2 pb-1">
         <Toolbar canvasRef={canvasRef} />
       </div>

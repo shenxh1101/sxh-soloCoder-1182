@@ -1,31 +1,44 @@
 import { useRef, useEffect, useState } from 'react';
-import { useThree, useFrame } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
 import { TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { SceneComponent, Vector3 } from '../../types';
+import { ComponentType } from '../../types';
 import { useSceneStore } from '../../store/useSceneStore';
 import { checkPositionValid } from '../../engine/CollisionDetector';
 import { getComponentRadius, getComponentHeight } from '../../utils/geometry';
-import { snapVector3ToGrid } from '../../utils/helpers';
 
 interface TransformableComponentProps {
   component: SceneComponent;
   children: React.ReactNode;
+  isSelected: boolean;
 }
 
-export function TransformableComponent({ component, children }: TransformableComponentProps) {
+export function TransformableComponent({ component, children, isSelected }: TransformableComponentProps) {
   const groupRef = useRef<THREE.Group>(null);
   const transformRef = useRef<any>(null);
   const { camera, gl } = useThree();
-  const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
   const selectComponent = useSceneStore((s) => s.selectComponent);
   const updateComponentPosition = useSceneStore((s) => s.updateComponentPosition);
   const updateComponentRotation = useSceneStore((s) => s.updateComponentRotation);
   const components = useSceneStore((s) => s.components);
-  const isSelected = selectedComponentId === component.id;
   const [mode, setMode] = useState<'translate' | 'rotate'>('translate');
-  const [tempPosition, setTempPosition] = useState<Vector3 | null>(null);
   const [positionValid, setPositionValid] = useState(true);
+  const lastUpdateRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!groupRef.current) return;
+    groupRef.current.position.set(
+      component.position.x,
+      component.position.y,
+      component.position.z
+    );
+    groupRef.current.rotation.set(
+      component.rotation.x,
+      component.rotation.y,
+      component.rotation.z
+    );
+  }, [component.position.x, component.position.y, component.position.z, component.rotation.x, component.rotation.y, component.rotation.z]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -45,35 +58,20 @@ export function TransformableComponent({ component, children }: TransformableCom
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSelected, component.id, selectComponent]);
 
-  useFrame(() => {
-    if (!transformRef.current || !groupRef.current) return;
-
-    if (isSelected) {
-      const pos = groupRef.current.position;
-      const radius = getComponentRadius(component);
-      const valid = checkPositionValid(
-        { x: pos.x, y: pos.y, z: pos.z },
-        radius,
-        components,
-        component.id
-      );
-      setPositionValid(valid);
-    }
-  });
-
   const handleTransformChange = () => {
     if (!groupRef.current) return;
+    const now = Date.now();
+    if (now - lastUpdateRef.current < 30) return;
+    lastUpdateRef.current = now;
+
     const pos = groupRef.current.position;
-    const rot = groupRef.current.rotation;
-
-    setTempPosition({ x: pos.x, y: pos.y, z: pos.z });
-
     const radius = getComponentRadius(component);
     const valid = checkPositionValid(
       { x: pos.x, y: pos.y, z: pos.z },
       radius,
       components,
-      component.id
+      component.id,
+      component.type
     );
     setPositionValid(valid);
   };
@@ -88,22 +86,31 @@ export function TransformableComponent({ component, children }: TransformableCom
       { x: pos.x, y: pos.y, z: pos.z },
       radius,
       components,
-      component.id
+      component.id,
+      component.type
     );
 
     if (valid) {
       updateComponentPosition(component.id, { x: pos.x, y: pos.y, z: pos.z }, false);
       updateComponentRotation(component.id, { x: rot.x, y: rot.y, z: rot.z });
-    } else if (tempPosition) {
+    } else {
       groupRef.current.position.set(
         component.position.x,
         component.position.y,
         component.position.z
       );
+      groupRef.current.rotation.set(
+        component.rotation.x,
+        component.rotation.y,
+        component.rotation.z
+      );
+      setPositionValid(true);
     }
-
-    setTempPosition(null);
   };
+
+  const indicatorHeight = component.type === ComponentType.MOTOR
+    ? 1.5
+    : getComponentHeight(component) + 0.5;
 
   return (
     <group ref={groupRef}>
@@ -116,16 +123,17 @@ export function TransformableComponent({ component, children }: TransformableCom
           mode={mode}
           onChange={handleTransformChange}
           onMouseUp={handleTransformEnd}
-          showX={mode === 'translate' || mode === 'rotate'}
-          showY={mode === 'translate' || mode === 'rotate'}
-          showZ={mode === 'translate' || mode === 'rotate'}
-          size={0.8}
+          showX
+          showY
+          showZ
+          size={0.7}
+          space={mode === 'rotate' ? 'local' : 'world'}
         />
       )}
 
-      {isSelected && transformRef.current && !positionValid && (
-        <mesh position={[0, getComponentHeight(component) + 0.3, 0]}>
-          <sphereGeometry args={[0.15, 16, 16]} />
+      {isSelected && !positionValid && (
+        <mesh position={[0, indicatorHeight, 0]}>
+          <sphereGeometry args={[0.12, 16, 16]} />
           <meshBasicMaterial color="#ef4444" />
         </mesh>
       )}

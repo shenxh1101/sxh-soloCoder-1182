@@ -8,8 +8,28 @@ import type {
   ComponentPreset,
   RotationDirection,
 } from '../types';
+import type { SaveData } from '../utils/exportUtils';
 import { ComponentType } from '../types';
 import { generateId, snapVector3ToGrid } from '../utils/helpers';
+
+export interface SaveDataV2 {
+  version: string;
+  timestamp: number;
+  components: SceneComponent[];
+  gearConnections: GearConnection[];
+  beltConnections: BeltConnection[];
+  settings: {
+    background: BackgroundType;
+    explosionView: boolean;
+    explosionFactor: number;
+  };
+}
+
+export interface LoadError {
+  message: string;
+  details?: string;
+  fileName?: string;
+}
 
 interface SceneState {
   components: SceneComponent[];
@@ -23,6 +43,10 @@ interface SceneState {
   explosionFactor: number;
   draggingPreset: ComponentPreset | null;
   orderCounter: number;
+  connectionEditMode: null | 'belt';
+  pendingBeltSelection: string | null;
+  loadError: LoadError | null;
+  focusComponentId: string | null;
 
   addComponent: (preset: ComponentPreset, position: Vector3) => void;
   removeComponent: (id: string) => void;
@@ -32,6 +56,9 @@ interface SceneState {
   selectComponent: (id: string | null) => void;
   setGearConnections: (connections: GearConnection[]) => void;
   setBeltConnections: (connections: BeltConnection[]) => void;
+  addBeltConnection: (pulleyAId: string, pulleyBId: string) => boolean;
+  removeBeltConnection: (pulleyAId: string, pulleyBId: string) => void;
+  toggleBeltConnection: (pulleyAId: string, pulleyBId: string) => void;
   toggleRunning: () => void;
   setRunning: (running: boolean) => void;
   setHighlightedChain: (ids: string[]) => void;
@@ -41,11 +68,13 @@ interface SceneState {
   setDraggingPreset: (preset: ComponentPreset | null) => void;
   updateComponentSpeeds: (speeds: Map<string, { speed: number; direction: RotationDirection }>) => void;
   clearScene: () => void;
-  loadScene: (data: {
-    components: SceneComponent[];
-    gearConnections: GearConnection[];
-    beltConnections: BeltConnection[];
-  }) => void;
+  loadScene: (data: SaveData | SaveDataV2) => void;
+  setConnectionEditMode: (mode: null | 'belt') => void;
+  setPendingBeltSelection: (id: string | null) => void;
+  handleBeltEditClick: (pulleyId: string) => void;
+  setLoadError: (error: LoadError | null) => void;
+  setFocusComponentId: (id: string | null) => void;
+  getSaveData: () => SaveDataV2;
 }
 
 export const useSceneStore = create<SceneState>((set, get) => ({
@@ -60,6 +89,10 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   explosionFactor: 1.0,
   draggingPreset: null,
   orderCounter: 0,
+  connectionEditMode: null,
+  pendingBeltSelection: null,
+  loadError: null,
+  focusComponentId: null,
 
   addComponent: (preset, position) => {
     const state = get();
@@ -135,6 +168,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       ),
       selectedComponentId: state.selectedComponentId === id ? null : state.selectedComponentId,
       highlightedChain: state.highlightedChain.filter((c) => c !== id),
+      pendingBeltSelection: state.pendingBeltSelection === id ? null : state.pendingBeltSelection,
+      focusComponentId: state.focusComponentId === id ? null : state.focusComponentId,
     });
   },
 
@@ -167,18 +202,73 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   },
 
   selectComponent: (id) => {
+    const state = get();
+    if (state.connectionEditMode === 'belt' && id) {
+      const comp = state.components.find((c) => c.id === id);
+      if (comp && comp.type === ComponentType.PULLEY) {
+        get().handleBeltEditClick(id);
+        return;
+      }
+    }
     set({ selectedComponentId: id });
     if (!id) {
       set({ highlightedChain: [] });
     }
   },
-
   setGearConnections: (connections) => {
     set({ gearConnections: connections });
   },
 
   setBeltConnections: (connections) => {
     set({ beltConnections: connections });
+  },
+
+  addBeltConnection: (pulleyAId, pulleyBId) => {
+    const state = get();
+    if (pulleyAId === pulleyBId) return false;
+    const exists = state.beltConnections.some(
+      (c) =>
+        (c.fromPulleyId === pulleyAId && c.toPulleyId === pulleyBId) ||
+        (c.fromPulleyId === pulleyBId && c.toPulleyId === pulleyAId)
+    );
+    if (exists) return false;
+
+    set({
+      beltConnections: [
+        ...state.beltConnections,
+        {
+          id: `belt-conn-${pulleyAId}-${pulleyBId}-${Date.now()}`,
+          fromPulleyId: pulleyAId,
+          toPulleyId: pulleyBId,
+        },
+      ],
+    });
+    return true;
+  },
+
+  removeBeltConnection: (pulleyAId, pulleyBId) => {
+    const state = get();
+    set({
+      beltConnections: state.beltConnections.filter(
+        (c) =>
+          !((c.fromPulleyId === pulleyAId && c.toPulleyId === pulleyBId) ||
+            (c.fromPulleyId === pulleyBId && c.toPulleyId === pulleyAId))
+      ),
+    });
+  },
+
+  toggleBeltConnection: (pulleyAId, pulleyBId) => {
+    const state = get();
+    const exists = state.beltConnections.some(
+      (c) =>
+        (c.fromPulleyId === pulleyAId && c.toPulleyId === pulleyBId) ||
+        (c.fromPulleyId === pulleyBId && c.toPulleyId === pulleyAId)
+    );
+    if (exists) {
+      get().removeBeltConnection(pulleyAId, pulleyBId);
+    } else {
+      get().addBeltConnection(pulleyAId, pulleyBId);
+    }
   },
 
   toggleRunning: () => {
@@ -234,6 +324,8 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       selectedComponentId: null,
       highlightedChain: [],
       orderCounter: 0,
+      pendingBeltSelection: null,
+      focusComponentId: null,
     });
   },
 
@@ -250,6 +342,67 @@ export const useSceneStore = create<SceneState>((set, get) => ({
       isRunning: false,
       selectedComponentId: null,
       highlightedChain: [],
+      background: data.settings?.background || 'dark',
+      explosionView: data.settings?.explosionView || false,
+      explosionFactor: data.settings?.explosionFactor || 1.0,
+      pendingBeltSelection: null,
+      focusComponentId: null,
+      loadError: null,
     });
+  },
+
+  setConnectionEditMode: (mode) => {
+    set({
+      connectionEditMode: mode,
+      pendingBeltSelection: null,
+      selectedComponentId: null,
+    });
+  },
+
+  setPendingBeltSelection: (id) => {
+    set({ pendingBeltSelection: id });
+  },
+
+  handleBeltEditClick: (pulleyId) => {
+    const state = get();
+    if (state.pendingBeltSelection === null) {
+      set({ pendingBeltSelection: pulleyId, selectedComponentId: pulleyId });
+    } else if (state.pendingBeltSelection === pulleyId) {
+      set({ pendingBeltSelection: null, selectedComponentId: null });
+    } else {
+      get().toggleBeltConnection(state.pendingBeltSelection, pulleyId);
+      set({ pendingBeltSelection: null, selectedComponentId: null });
+    }
+  },
+
+  setLoadError: (error) => {
+    set({ loadError: error });
+  },
+
+  setFocusComponentId: (id) => {
+    set({ focusComponentId: id });
+    if (id) {
+      const state = get();
+      const comp = state.components.find((c) => c.id === id);
+      if (comp) {
+        set({ highlightedChain: [] });
+      }
+    }
+  },
+
+  getSaveData: () => {
+    const state = get();
+    return {
+      version: '2.0.0',
+      timestamp: Date.now(),
+      components: state.components,
+      gearConnections: state.gearConnections,
+      beltConnections: state.beltConnections,
+      settings: {
+        background: state.background,
+        explosionView: state.explosionView,
+        explosionFactor: state.explosionFactor,
+      },
+    };
   },
 }));

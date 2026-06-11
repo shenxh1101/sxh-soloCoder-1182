@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import * as THREE from 'three';
 import type { SceneComponent } from '../../types';
 import { ComponentType } from '../../types';
+import { useSceneStore } from '../../store/useSceneStore';
+import { TransformableComponent } from './TransformableComponent';
 import { Gear3D } from './Gear3D';
 import { Shaft3D } from './Shaft3D';
 import { Pulley3D } from './Pulley3D';
@@ -9,95 +10,249 @@ import { Motor3D } from './Motor3D';
 import { Belt3D } from './Belt3D';
 import { SpeedLabel } from './SpeedLabel';
 import { TorqueArrow } from './TorqueArrow';
-import { TransformableComponent } from './TransformableComponent';
-import { useSceneStore } from '../../store/useSceneStore';
+import { getTransmissionChain, detectGearConnections } from '../../engine/TransmissionEngine';
+
+const GEAR_MESH_PREVIEW_TOLERANCE = 0.5;
+
+const getExplosionOffset = (
+  component: SceneComponent,
+  center: { x: number; z: number },
+  factor: number
+) => {
+  const dx = component.position.x - center.x;
+  const dz = component.position.z - center.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  if (dist < 0.001) return { x: 0, y: 0, z: 0 };
+  const offsetDist = dist * factor;
+  return {
+    x: (dx / dist) * offsetDist,
+    y: offsetDist * 0.3,
+    z: (dz / dist) * offsetDist,
+  };
+};
+
+function RenderComponent({ component, showMeshPreview, isBeltEditTarget }: {
+  component: SceneComponent;
+  showMeshPreview: boolean;
+  isBeltEditTarget: boolean;
+}) {
+  const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
+  const highlightedChain = useSceneStore((s) => s.highlightedChain);
+  const isRunning = useSceneStore((s) => s.isRunning);
+  const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
+  const pendingBeltSelection = useSceneStore((s) => s.pendingBeltSelection);
+  const focusComponentId = useSceneStore((s) => s.focusComponentId);
+
+  const isSelected = selectedComponentId === component.id;
+  const isHighlighted = highlightedChain.includes(component.id);
+  const isFocused = focusComponentId === component.id;
+  const isPendingBelt = pendingBeltSelection === component.id;
+
+  const commonProps = {
+    isSelected,
+    isHighlighted,
+    isFocused,
+  };
+
+  let content: React.ReactNode = null;
+  switch (component.type) {
+    case ComponentType.GEAR:
+      content = (
+        <Gear3D
+          component={component}
+          {...commonProps}
+          showMeshPreview={showMeshPreview}
+          isPendingBelt={isPendingBelt}
+          isBeltEditTarget={isBeltEditTarget}
+        />
+      );
+      break;
+    case ComponentType.SHAFT:
+      content = <Shaft3D component={component} {...commonProps} />;
+      break;
+    case ComponentType.PULLEY:
+      content = (
+        <Pulley3D
+          component={component}
+          {...commonProps}
+          isPendingBelt={isPendingBelt}
+          isBeltEditTarget={isBeltEditTarget}
+        />
+      );
+      break;
+    case ComponentType.MOTOR:
+      content = <Motor3D component={component} {...commonProps} />;
+      break;
+  }
+
+  const showLabels = isRunning && (component.type === ComponentType.GEAR || component.type === ComponentType.PULLEY);
+  const labelHeight = component.type === ComponentType.MOTOR ? 1.5 : (component as any).thickness || 1;
+
+  return (
+    <TransformableComponent component={component} isSelected={isSelected}>
+      {content}
+      {showLabels && (
+        <>
+          <group position={[0, labelHeight + 0.3, 0]}>
+            <SpeedLabel component={component} />
+          </group>
+          <group position={[0, labelHeight + 0.6, 0]}>
+            <TorqueArrow component={component} />
+          </group>
+        </>
+      )}
+    </TransformableComponent>
+  );
+}
+
+function MeshPreviewIndicator({ gearA, gearB }: { gearA: SceneComponent; gearB: SceneComponent }) {
+  const dx = gearB.position.x - gearA.position.x;
+  const dz = gearB.position.z - gearA.position.z;
+  const distance = Math.sqrt(dx * dx + dz * dz);
+  if (distance < 0.001) return null;
+
+  const midX = (gearA.position.x + gearB.position.x) / 2;
+  const midZ = (gearA.position.z + gearB.position.z) / 2;
+  const angle = Math.atan2(dz, dx);
+
+  return (
+    <group position={[midX, 0.1, midZ]} rotation={[0, -angle, 0]}>
+      <mesh>
+        <cylinderGeometry args={[0.03, 0.03, distance, 8]} />
+        <meshBasicMaterial color="#22c55e" transparent opacity={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
+function ConnectionStatusOverlay({ component, isConnected }: { component: SceneComponent; isConnected: boolean }) {
+  const isRunning = useSceneStore((s) => s.isRunning);
+  const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
+  if (isRunning) return null;
+  if (selectedComponentId !== component.id) return null;
+
+  return (
+    <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <ringGeometry args={[0.02, 0.08, 16]} />
+      <meshBasicMaterial
+        color={isConnected ? '#22c55e' : '#94a3b8'}
+        transparent
+        opacity={0.9}
+      />
+    </mesh>
+  );
+}
 
 export function SceneComponents() {
   const components = useSceneStore((s) => s.components);
   const gearConnections = useSceneStore((s) => s.gearConnections);
   const beltConnections = useSceneStore((s) => s.beltConnections);
-  const selectedComponentId = useSceneStore((s) => s.selectedComponentId);
-  const highlightedChain = useSceneStore((s) => s.highlightedChain);
-  const isRunning = useSceneStore((s) => s.isRunning);
   const explosionView = useSceneStore((s) => s.explosionView);
   const explosionFactor = useSceneStore((s) => s.explosionFactor);
+  const pendingBeltSelection = useSceneStore((s) => s.pendingBeltSelection);
+  const isRunning = useSceneStore((s) => s.isRunning);
 
-  const centerPoint = useMemo(() => {
-    if (components.length === 0) return { x: 0, y: 0, z: 0 };
-    const sum = components.reduce(
-      (acc, c) => ({
-        x: acc.x + c.position.x,
-        y: acc.y + c.position.y,
-        z: acc.z + c.position.z,
-      }),
-      { x: 0, y: 0, z: 0 }
-    );
-    return {
-      x: sum.x / components.length,
-      y: sum.y / components.length,
-      z: sum.z / components.length,
-    };
-  }, [components]);
+  const connectedIds = useMemo(() => {
+    const ids = new Set<string>();
+    gearConnections.forEach((gc) => {
+      ids.add(gc.gearAId);
+      ids.add(gc.gearBId);
+    });
+    beltConnections.forEach((bc) => {
+      ids.add(bc.fromPulleyId);
+      ids.add(bc.toPulleyId);
+    });
+    return ids;
+  }, [gearConnections, beltConnections]);
 
-  const getExplosionOffset = (comp: SceneComponent) => {
-    if (!explosionView) return { x: 0, y: 0, z: 0 };
-    const factor = explosionFactor;
-    return {
-      x: (comp.position.x - centerPoint.x) * (factor - 1),
-      y: (comp.position.y - centerPoint.y + 0.5) * (factor - 1) + (factor - 1) * 0.5,
-      z: (comp.position.z - centerPoint.z) * (factor - 1),
-    };
-  };
-
-  const renderComponent = (comp: SceneComponent) => {
-    const isSelected = selectedComponentId === comp.id;
-    const isHighlighted = highlightedChain.includes(comp.id);
-    const offset = getExplosionOffset(comp);
-
-    const adjustedComp = {
-      ...comp,
-      position: {
-        x: comp.position.x + offset.x,
-        y: comp.position.y + offset.y,
-        z: comp.position.z + offset.z,
-      },
-    };
-
-    let component3D: React.ReactNode = null;
-
-    switch (comp.type) {
-      case ComponentType.GEAR:
-        component3D = <Gear3D component={adjustedComp as any} isSelected={isSelected} isHighlighted={isHighlighted} />;
-        break;
-      case ComponentType.SHAFT:
-        component3D = <Shaft3D component={adjustedComp as any} isSelected={isSelected} isHighlighted={isHighlighted} />;
-        break;
-      case ComponentType.PULLEY:
-        component3D = <Pulley3D component={adjustedComp as any} isSelected={isSelected} isHighlighted={isHighlighted} />;
-        break;
-      case ComponentType.MOTOR:
-        component3D = <Motor3D component={adjustedComp as any} isSelected={isSelected} isHighlighted={isHighlighted} />;
-        break;
+  const previewMeshPairs = useMemo(() => {
+    if (isRunning) return [];
+    const gears = components.filter((c) => c.type === ComponentType.GEAR);
+    const pairs: [SceneComponent, SceneComponent][] = [];
+    for (let i = 0; i < gears.length; i++) {
+      for (let j = i + 1; j < gears.length; j++) {
+        const dx = gears[i].position.x - gears[j].position.x;
+        const dz = gears[i].position.z - gears[j].position.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        const rA = (gears[i] as any).radius;
+        const rB = (gears[j] as any).radius;
+        const target = rA + rB;
+        if (Math.abs(distance - target) < GEAR_MESH_PREVIEW_TOLERANCE && distance > target) {
+          pairs.push([gears[i], gears[j]]);
+        }
+      }
     }
+    return pairs;
+  }, [components, isRunning]);
 
-    return (
-      <group key={comp.id}>
-        <TransformableComponent component={comp}>
-          {component3D}
-        </TransformableComponent>
-        {isRunning && <TorqueArrow component={adjustedComp as any} />}
-        <SpeedLabel component={adjustedComp as any} showSpeed={isRunning} />
-      </group>
-    );
-  };
+  const gearsWithMeshPreview = useMemo(() => {
+    const ids = new Set<string>();
+    previewMeshPairs.forEach(([a, b]) => {
+      ids.add(a.id);
+      ids.add(b.id);
+    });
+    return ids;
+  }, [previewMeshPairs]);
+
+  const beltEditTargetIds = useMemo(() => {
+    if (pendingBeltSelection === null) return new Set<string>();
+    const ids = new Set<string>();
+    components.forEach((c) => {
+      if (c.type === ComponentType.PULLEY && c.id !== pendingBeltSelection) {
+        ids.add(c.id);
+      }
+    });
+    return ids;
+  }, [pendingBeltSelection, components]);
+
+  const explosionCenter = useMemo(() => {
+    if (components.length === 0) return { x: 0, z: 0 };
+    let sumX = 0, sumZ = 0;
+    components.forEach((c) => {
+      sumX += c.position.x;
+      sumZ += c.position.z;
+    });
+    return { x: sumX / components.length, z: sumZ / components.length };
+  }, [components]);
 
   return (
     <group>
-      {components.map(renderComponent)}
-      {!explosionView &&
-        beltConnections.map((conn) => (
-          <Belt3D key={conn.id} connection={conn} components={components} />
-        ))}
+      {components.map((component) => {
+        let effectiveComponent = component;
+        if (explosionView) {
+          const offset = getExplosionOffset(component, explosionCenter, explosionFactor);
+          effectiveComponent = {
+            ...component,
+            position: {
+              x: component.position.x + offset.x,
+              y: component.position.y + offset.y,
+              z: component.position.z + offset.z,
+            },
+          };
+        }
+
+        return (
+          <group key={component.id}>
+            <RenderComponent
+              component={effectiveComponent}
+              showMeshPreview={gearsWithMeshPreview.has(component.id)}
+              isBeltEditTarget={beltEditTargetIds.has(component.id)}
+            />
+            <ConnectionStatusOverlay
+              component={effectiveComponent}
+              isConnected={connectedIds.has(component.id)}
+            />
+          </group>
+        );
+      })}
+
+      {beltConnections.map((conn) => (
+        <Belt3D key={`${conn.fromPulleyId}-${conn.toPulleyId}`} connection={conn} components={components} />
+      ))}
+
+      {previewMeshPairs.map(([a, b], idx) => (
+        <MeshPreviewIndicator key={`preview-${idx}`} gearA={a} gearB={b} />
+      ))}
     </group>
   );
 }

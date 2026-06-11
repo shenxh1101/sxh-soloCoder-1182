@@ -8,16 +8,32 @@ interface Motor3DProps {
   component: MotorComponent;
   isSelected: boolean;
   isHighlighted: boolean;
+  isFocused: boolean;
 }
 
-export function Motor3D({ component, isSelected, isHighlighted }: Motor3DProps) {
-  const fanRef = useRef<THREE.Mesh>(null);
-  const groupRef = useRef<THREE.Group>(null);
+export function Motor3D({ component, isSelected, isHighlighted, isFocused }: Motor3DProps) {
+  const fanRef = useRef<THREE.Group>(null);
   const isRunning = useSceneStore((s) => s.isRunning);
   const selectComponent = useSceneStore((s) => s.selectComponent);
+  const connectionEditMode = useSceneStore((s) => s.connectionEditMode);
 
-  const color = isSelected ? '#3b82f6' : isHighlighted ? '#f97316' : '#ef4444';
-  const emissive = isSelected ? '#1e40af' : isHighlighted ? '#c2410c' : '#7f1d1d';
+  let bodyColor = '#ef4444';
+  let emissive = '#7f1d1d';
+  let emissiveIntensity = 0.1;
+
+  if (isFocused) {
+    bodyColor = '#fbbf24';
+    emissive = '#d97706';
+    emissiveIntensity = 0.4;
+  } else if (isHighlighted) {
+    bodyColor = '#f97316';
+    emissive = '#ea580c';
+    emissiveIntensity = 0.3;
+  } else if (isSelected) {
+    bodyColor = '#3b82f6';
+    emissive = '#1d4ed8';
+    emissiveIntensity = 0.3;
+  }
 
   useFrame((_, delta) => {
     if (fanRef.current && isRunning && component.running) {
@@ -28,35 +44,46 @@ export function Motor3D({ component, isSelected, isHighlighted }: Motor3DProps) 
 
   const handleClick = (e: any) => {
     e.stopPropagation();
+    if (connectionEditMode === 'belt') return;
     selectComponent(component.id);
+  };
+
+  const handlePointerOver = (e: any) => {
+    e.stopPropagation();
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePointerOut = () => {
+    document.body.style.cursor = 'auto';
   };
 
   return (
     <group
-      ref={groupRef}
-      position={[component.position.x, component.position.y, component.position.z]}
-      rotation={[component.rotation.x, component.rotation.y, component.rotation.z]}
       onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
     >
       <mesh position={[0, 0.3, 0]} castShadow>
         <cylinderGeometry args={[0.5, 0.5, 0.6, 32]} />
         <meshStandardMaterial
-          color={color}
+          color={bodyColor}
           emissive={emissive}
-          emissiveIntensity={isSelected || isHighlighted ? 0.3 : 0.1}
+          emissiveIntensity={emissiveIntensity}
           metalness={0.5}
           roughness={0.5}
         />
       </mesh>
 
-      <mesh ref={fanRef} position={[0, 0.65, 0]}>
-        <boxGeometry args={[0.8, 0.05, 0.15]} />
-        <meshStandardMaterial color="#1e293b" metalness={0.7} roughness={0.3} />
-      </mesh>
-      <mesh ref={fanRef} position={[0, 0.65, 0]} rotation={[0, Math.PI / 2, 0]}>
-        <boxGeometry args={[0.8, 0.05, 0.15]} />
-        <meshStandardMaterial color="#1e293b" metalness={0.7} roughness={0.3} />
-      </mesh>
+      <group ref={fanRef} position={[0, 0.65, 0]}>
+        <mesh>
+          <boxGeometry args={[0.8, 0.05, 0.15]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.7} roughness={0.3} />
+        </mesh>
+        <mesh rotation={[0, Math.PI / 2, 0]}>
+          <boxGeometry args={[0.8, 0.05, 0.15]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.7} roughness={0.3} />
+        </mesh>
+      </group>
 
       <mesh position={[0, 0.95, 0]}>
         <cylinderGeometry args={[0.15, 0.15, 0.3, 32]} />
@@ -80,11 +107,11 @@ export function Motor3D({ component, isSelected, isHighlighted }: Motor3DProps) 
         </mesh>
       )}
 
-      {(isSelected || isHighlighted) && (
+      {(isSelected || isHighlighted || isFocused) && (
         <mesh position={[0, 0.3, 0]}>
           <cylinderGeometry args={[0.6, 0.6, 0.8, 32]} />
           <meshBasicMaterial
-            color={isHighlighted ? '#f97316' : '#3b82f6'}
+            color={isFocused ? '#fbbf24' : isHighlighted ? '#f97316' : '#3b82f6'}
             transparent
             opacity={0.15}
             side={THREE.BackSide}
